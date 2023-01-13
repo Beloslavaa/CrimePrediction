@@ -1,0 +1,337 @@
+---
+title: "TrabajoFinal2"
+author: "Bella Dimitrova"
+date: '29 12 2022 г '
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+
+Variable	 	        Description
+
+M		            percentage of males aged 14–24 in total state population
+So	           	indicator variable for a southern state
+Ed		          mean years of schooling of the population aged 25 years or over
+Po1		          per capita expenditure on police protection in 1960
+Po2		          per capita expenditure on police protection in 1959
+LF		          labour force participation rate of civilian urban males in the age-group 14-24
+M.F		          number of males per 100 females
+Pop		          state population in 1960 in hundred thousands
+NW		          percentage of nonwhites in the population
+U1	          	unemployment rate of urban males 14–24
+U2	          	unemployment rate of urban males 35–39
+Wealth      		wealth: median value of transferable assets or family income
+Ineq	        	income inequality: percentage of families earning below half the median income
+Prob	        	probability of imprisonment: ratio of number of commitments to number of offenses
+Time	        	average time in months served by offenders in state prisons before their first release
+Crime	        	crime rate: number of offenses per 100,000 population in 1960
+
+Observations are the 47 US states.
+
+```{r}
+uscrime<-read.table("C:\\Users\\User\\Documents\\PREDICCION\\uscrime.txt", header=TRUE)
+head(uscrime)
+```
+Para nuestro modelo hemos elegido como variable respuesta el nivel de crimen - numero de delitos por 100,000 personas en 1960. Aunque no se especifica nada, estaria bien ver cuales de las variables son mas relacionadas con la respuesta. 
+
+```{r}
+cor(uscrime)
+```
+Al final decidimos que estaria interesante intentar explicar la crimen por los gastos para policia el mismo año (1960), renta media de las familias, la probabilidad de que tras hacer un delito te encarcelan (num de delitos/num de encarcelamientos) y finalmente media de los anos pasados estudiando de la populacion de >25 anos.
+
+```{r}
+mlr4var<-lm(Crime~Po2+Wealth+Prob+Ed, data=uscrime); mlr4var
+summary(mlr4var)
+```
+El segundo modelo (el submodelo) sera la crimen explicada no tanto por factores sociologicos como la educacion o riqueza, sino de la atencion del estado al crimen (cuanto se paga a la policia, con que probabilidad te echan a la carcel..)
+```{r}
+mlr2var<-lm(Crime~Po2+Prob, data=uscrime)
+```
+
+
+```{r creando la malla (el plano del modelo)}
+library("plot3D")
+grid.lines = 40
+x.pred <- seq(min(uscrime$Po2), max(uscrime$Po2), length.out = grid.lines)
+y.pred <- seq(min(uscrime$Prob), max(uscrime$Prob), length.out = grid.lines)
+xy <- expand.grid( Po2 = x.pred, Prob = y.pred)
+xy
+z.pred <- matrix(predict(mlr2var, newdata = xy),nrow = grid.lines, ncol = grid.lines)
+```
+
+
+```{r scatter 3D}
+library(rgl)
+library("plot3D")
+data <- uscrime
+mycolors<-c("red")
+
+plot3d( 
+  x=uscrime$Po2, y=uscrime$Prob, z= uscrime$Crime,
+  col = mycolors, 
+  type = 's', 
+  radius = 3,
+  xlab = "Po2", ylab = "Prob", zlab = "Crime")
+
+surface3d(x.pred, y.pred, z.pred, facets = NA, alpha=0.4, col="lightblue", border="lightblue")
+rglwidget()
+
+```
+
+
+Ahora creamos el IC del valor medio de ambas variables. Estimando, vemos que el nivel de la crimen estara entre 819.71 990.45 delitos por 100,000 personas y con prediccion sera entre 313.6 y 1496.57
+
+
+```{r}
+df<-data.frame(Po2=mean(uscrime$Po2), Prob=mean(uscrime$Prob))
+predict(mlr2var, df, interval="prediction", level=0.95)
+predict(mlr2var, df, interval="confidence", level=0.95)
+
+```
+Tambien creamos un intervalo de confianza para las variables regresoras.
+```{r}
+confint(mlr2var, level=0.95)
+```
+Grafico con las bandas de prediccion y estimacion:
+```{r}
+
+po2.s<-seq(min(uscrime$Po2), max(uscrime$Po2), length=100)
+prob.s<-seq(min(uscrime$Prob), max(uscrime$Prob), length=100)
+
+crime.pred<-predict(mlr2var, data.frame(Po2=po2.s, Prob=prob.s), interval="prediction", level=0.95)
+crime.conf<-predict(mlr2var, data.frame(Po2=po2.s, Prob=prob.s), interval="confidence", level=0.95)
+
+plot(uscrime$Po2, uscrime$Crime, main="Regresión")
+abline(mlr2var, col="black")
+
+lines(po2.s, crime.pred[,2], col="blue", lty=2)
+lines(po2.s, crime.pred[,3], col="blue", lty=2)
+
+lines(po2.s, crime.conf[,2], col="red", lty=2)
+lines(po2.s, crime.conf[,3], col="red", lty=2)
+
+```
+```{r}
+plot(uscrime$Prob, uscrime$Crime, main="Regresión")
+abline(mlr2var, col="black")
+
+lines(prob.s, crime.pred[,2], col="blue", lty=2)
+lines(prob.s, crime.pred[,3], col="blue", lty=2)
+
+lines(prob.s, crime.conf[,2], col="red", lty=2)
+lines(prob.s, crime.conf[,3], col="red", lty=2)
+```
+De estas dos graficas se ven las bandas de confianza (de prediccion y de estimacion), es decir los limites de la recta de regresion. Se observa, ya que no hemos hecho graficos hasta ahora que la pendiente de la variable Prob es nula (horizontal), es decir se puede dudar que aunque la variable esta correlada con la variable respuesta, no aprota para el modelo cuando tenemos Po2 ya en ello.
+
+```{r}
+anova(mlr2var)
+```
+Efectivamente, con un F=1.3195 y un p-valor=0.2569 no tenemos evidencias suficiente para rechazar H0 que la pendiente sea 0 y por esto se puede concluir que la variable Prob no aprota informacion relevante en este modelo.
+
+Ahora generamos un diagrama de dispersión donde etiquetamos con colores las observaciones para indicar a qué categorías de una variable categórica pertenecen.
+
+Vamos a discretizar la variable Prob en 3 niveles - probabilidad de encarcelar Baja, Media y Alta.
+
+```{r}
+prob.disc<-cut(uscrime$Prob, breaks=seq(min(uscrime$Prob), max(uscrime$Prob), length.out=4), include.lowest = TRUE)
+levels(prob.disc)<-c("Baja", "Media", "Alta")
+table(prob.disc)
+uscrime$prob.disc<-prob.disc
+
+```
+```{r}
+library(ggplot2)
+ggplot(data =  uscrime) + 
+  geom_point(mapping = aes(x = Po2, y =Crime, colour=prob.disc))
+
+```
+Aqui observamos algo muy interesante. Estabamos esperando (en general) que la relacion de los gastos de policia y nivel de la crimen esten relacionados negativamente, es decir a mayor gasto para la proteccion por parte de la policia que haya menos crimen. Sin embargo, observamos todo lo contrario. Antes de hacer conclusiones, podemos suponer que esta relacion entre las dos variables es puramente asociativa (sabiendo un valor de Po2 podemos predecir la Crimen) y no causativa. Es decir no podemos concluir que cuanto mas gastamos para policia tanto mas crimen habra.
+
+Observando como hemos categorizado las observaciones, parece que los estados donde se gasta mas para proteccion por parte de la policia hay una probabilidad baja de que se encarcela una persona habiendo cometido un delito y probabilidad alta en los estados donde se paga menos a la policia.
+
+Anadimos una variable categorica:
+
+```{r}
+uscrime$So[which(uscrime$So==0)]<-"Northern"
+uscrime$So[which(uscrime$So==1)]<-"Southern"
+uscrime$So<-factor(uscrime$So, levels = c("Northern","Southern"))
+mlr2var.alt<-lm(Crime~Po2+Prob+So, data=uscrime)
+summary(mlr2var.alt)
+```
+Vamos a dejar la categoria por defecto - 0 que significa que no es de un estado del sur. 1 sera respectivamente estado del sur. Como se tiene la preocupacion que en los estados del sur hay menos control de armas (por lo menos recientemente), tiene sentido que sepamos cuanto mas crimen hay en los estados del sur si se paga igual a la policia qu en el norte. Esto sera que en los estados de sur con esta condicion hay 244.2 delitos por 100,000 personas mas que en los estados del norte.
+
+
+Quieremos comprobar a traves de las sumas parciales cual de las tres variables es la mejor para entrar como ultima. Esto sera la variable que tiene menor SSR cuando el resto de las variables regresoras ya estan en el modelo. Creamos 2 modelos con una secuencia de entrada de variables diferente:
+
+```{r}
+modelo1<-lm(Crime~Po2+So+Prob, data=uscrime)
+modelo2<-lm(Crime~Prob+So+Po2, data=uscrime)
+```
+
+```{r}
+anova(mlr2var.alt)
+anova(modelo1)
+anova(modelo2)
+
+```
+
+Se observa que el mejor modelo sera el modelo1 en que Prob es la variable que entra ultima con SSR=344989. La que tiene mayor SSR es en modelo2, donde Po2 entra como ultima con SSR=2174233.
+
+LINEALIDAD EN EL MODELO
+
+
+Una cuestion importante es ver como entran las variables en el modelo. Considerando que vamos introduciendo una a una las variables cuantitativas predictoras, no se observa falta la linelidad. Sin embargo, este grafico de la variable regresora frente a los residuos no ensena exactamente la realidad, ya que hay otras variables en el modelo que pueden influir. Por esto creamos un grafico de residuos parciales.
+
+
+```{r}
+plot(uscrime$Po2, mlr2var$residuals)
+plot(uscrime$Prob, mlr2var$residuals)
+```
+```{r}
+mlr1<-lm(Crime~Po2, data=uscrime)
+mlr3<-lm(Po2~Prob, data=uscrime)
+plot(mlr1$residuals, mlr3$residuals)
+```
+
+```{r}
+library(car)
+crPlots(mlr2var.alt)
+
+```
+Podemos cuestionar si Po2 entra de forma lineal, la pendiente parece un poco curvada. Lo que podemos hacer es transformarla (con el riesgo de empeorar la interpretabilidad).
+
+```{r}
+#modelo alternativo que pueda resolver el problema de que Po2 no entra de forma lineal
+x1<-1/uscrime$Po2
+mlr2var.alt2<-lm(Crime~x1+Prob+So, data=uscrime)
+crPlots(mlr2var.alt2)
+
+```
+Podemos ver que hemos conseguido corregir la linealidad con la transformacion. X1 sera la inversa de la Po2.
+
+CAPACIDAD PREDICTIVA DEL MODELO
+
+Luego, para comprobar cual modelo tiene la mejor capacidad para predecir nuevos datos, hacemos una comparacion de los Rpress.
+
+Creamos una funcion para calcular los valores PRESS
+```{r}
+PRESS <- function(model) { i <- residuals(model)/(1 - lm.influence(model)$hat); sum(i^2)}
+
+```
+
+```{r}
+PRESS(mlr4var)
+PRESS(mlr2var)
+PRESS(mlr2var.alt)
+```
+Como buscamos el menor valor de PRESS, suponemos que el mejor modelo será el mlr2var.alt
+
+```{r}
+a1<-anova(mlr4var)
+scta1<-sum(a1$`Sum Sq`)
+1-PRESS(mlr4var)/scta1
+
+a2<-anova(mlr2var)
+scta2<-sum(a2$`Sum Sq`)
+1-PRESS(mlr2var)/scta2
+
+a3<-anova(mlr2var.alt)
+scta3<-sum(a3$`Sum Sq`)
+1-PRESS(mlr2var.alt)/scta3
+
+```
+Efectivamente, aunque es un valor relativamente pequeno (buscamos valores lo mas altos posibles de Rpress) el modelo mlr2var.alt tiene la mejor capacidad predictiva.
+
+CASOS INFLUYENTES
+
+Vamos a ver cual es el caso mas influyente de ente modelo. Nuestro criterio sera que una observacion que tiene un leverage (hat value) mayor que 2*(3+1)/47 se considera influyente.
+
+```{r}
+influence(mlr2var.alt)$hat
+criterio<-2*(3+1)/47
+unname(which(influence(mlr2var.alt)$hat>criterio))
+```
+
+Observaciones 18, 29 y 42 son influyentes en el modelo mlr2var.alt.
+
+```{r}
+uscrime.alt<-uscrime[-c(18,29,42),]
+mlr2var.sin<-lm(Crime~Po2+Prob+So, data=uscrime.alt)
+
+
+anova(mlr2var.alt)
+anova(mlr2var.sin)
+
+```
+Quitando las observaciones influyentes, podemos ver que el MSE ha mejorado de  76086 a 69188.
+
+PROBLEMAS DE MULTICOLINEALIDAD
+
+Para comprobar si hay multicolinealidad, primero vamos a var la matriz de correlaciones:
+```{r}
+cor(uscrime[,c("Po2", "Prob")])
+
+```
+Tambien podemos ver para el modelo con 4 varialbes:
+
+```{r}
+cor(uscrime[,c("Po2", "Wealth", "Prob", "Ed")])
+```
+
+Aqui en el segundo modelo nos puede preocupar una posible falta de independencia entre Po2 y Wealth o entre Wealth y Educacion.
+
+Podemos graficar las relaciones entre las variables.
+
+```{r}
+plot(uscrime[,c("Po2", "Wealth", "Prob", "Ed")], pch=20, cex=1.5, col='steelblue')
+```
+Y finalmente, un buen criterio para comprobar la multicolinealidad es a traves del VIF. Valores mayores que 5 nos ensenaran si alguna variable tiene una correlacion alta entre ella y el resto de predictoras.
+
+```{r}
+vif(mlr2var.alt)
+barplot(vif(mlr2var.alt), main = "VIF Values", horiz = TRUE, col = "steelblue")
+abline(v = 5, lwd = 3, lty = 2)
+```
+```{r}
+vif(mlr4var)
+barplot(vif(mlr4var), main = "VIF Values", horiz = TRUE, col = "steelblue")
+abline(v = 5, lwd = 3, lty = 2)
+```
+
+En el segundo modelo, la variable Wealth nos puede causar problemas de multicolinealidad (que sea correlada con el resto de variables predictoras), aunque es muy poco mayor que 5.
+
+ELEGIR VARIABLES PARA EL MODELO
+
+Otra buena manera de elegir variables que pueden formar parte en nuestro modelo es a traves del metodo forward y backward que consiste en encontrar un modelo con que introduciendo (o quitando en el caso de backward) variables la F sea maxima posible (F=MSModel/MSError), es decir que el modelo explica la mayor proporcion de la variabilidad posible.
+
+```{r}
+#con backward
+library(MASS)
+full.model<-lm(Crime~., data=uscrime)
+modback <- stepAIC(full.model, trace=TRUE, direction="backward")
+```
+```{r}
+horizonte<-(Crime~ M + So + Ed + Po1 + Po2 + LF + M.F + Pop + NW + U1 + U2 + Wealth + Ineq + Prob + Time)
+empty.model<-lm(Crime~1,data=uscrime)
+modfor <- stepAIC(empty.model, trace=TRUE, direction="forward", scope=horizonte)
+```
+```{r}
+summary(mlr2var.alt)
+summary(modback)
+summary(modfor)
+```
+Aplicando los 3 criterios de bondad de ajuste para ver cual es el mejor modelo, aunque con el test de F todos los modelos salen significativos (el modelo lineal explica bien la respuesta) el modelo backward es el que tiene mayor R-ajustada (parte de la varianza explicada por la recta de regresión, teniendo en cuenta las variables ya incluidas) con un valor de 0.7444 y tiene el menor error estandartizado. 
+
+Si quieremos ver si hay problemas de multicolinealidad:
+
+```{r}
+vif(modback)
+barplot(vif(modback), main = "VIF Values", horiz = TRUE, col = "steelblue")
+abline(v = 5, lwd = 3, lty = 2)
+
+```
+No hay problemas de multicolinealidad, hay una sola variable (M.F) que puede ser redundante (no se puede rechazar que su pendiente sea nula), pero sobre todo es el mejor modelo que hemos sido capaces de encontrar.
+
+
